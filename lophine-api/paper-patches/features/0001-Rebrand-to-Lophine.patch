@@ -5,7 +5,7 @@ Subject: [PATCH] Rebrand to Lophine
 
 
 diff --git a/src/main/java/io/papermc/paper/ServerBuildInfo.java b/src/main/java/io/papermc/paper/ServerBuildInfo.java
-index 4e099b584c3435ba1ebce492011d35ae1ac0cdf8..ed558bea1f939ab902d3c45417573fba83307abc 100644
+index 4e099b584c3435ba1ebce492011d35ae1ac0cdf8..378c78b9321cbb96d95f0fb0d8c9c2ca2a283752 100644
 --- a/src/main/java/io/papermc/paper/ServerBuildInfo.java
 +++ b/src/main/java/io/papermc/paper/ServerBuildInfo.java
 @@ -17,6 +17,17 @@ public interface ServerBuildInfo {
@@ -14,7 +14,7 @@ index 4e099b584c3435ba1ebce492011d35ae1ac0cdf8..ed558bea1f939ab902d3c45417573fba
  
 +    // Lophine start
 +    /**
-+     * The brand id for folia
++     * The brand id for folia.
 +     */
 +    Key BRAND_FOLIA_ID = Key.key("papermc", "folia");
 +    /**
