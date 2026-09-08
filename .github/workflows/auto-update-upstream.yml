@@ -13,32 +13,99 @@ jobs:
       UPSTREAM_URL: "https://github.com/PaperMC/Folia.git"
       REF: "foliaRef"
       TITLE: "Update Upstream (Folia)"
+      REF_COMMIT: "auto-update/upstream"
     steps:
+      - name: Checkout target repository for check
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          path: check
+
+      - name: Check if upstream already up to date
+        working-directory: check
+        run: |
+          BRANCH=${{ env.REF_COMMIT }}
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$BRANCH"
+            LOCAL_REF=$(git show "origin/$BRANCH:gradle.properties" | grep '^${{ env.REF }}=' | cut -d'=' -f2 | tr -d '[:space:]')
+          else
+            LOCAL_REF=$(grep '^${{ env.REF }}=' gradle.properties | cut -d'=' -f2 | tr -d '[:space:]')
+          fi
+          UPSTREAM_REF=$(git ls-remote "${{ env.UPSTREAM_URL }}" HEAD | cut -f1)
+          echo "Local ref: $LOCAL_REF"
+          echo "Upstream ref: $UPSTREAM_REF"
+          if [ "$LOCAL_REF" = "$UPSTREAM_REF" ]; then
+            echo "Upstream is already up to date, skipping all steps."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        id: uptodate
+
+      - name: Ensure PR exists if branch differs from main
+        if: steps.uptodate.outputs.skip == 'true'
+        working-directory: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH=${{ env.REF_COMMIT }}
+          BASE="${{ github.event.repository.default_branch }}"
+
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$BRANCH" "$BASE"
+            BASE_REF=$(git show "origin/$BASE:gradle.properties" | grep '^${{ env.REF }}=' | cut -d'=' -f2 | tr -d '[:space:]')
+            BRANCH_REF=$(git show "origin/$BRANCH:gradle.properties" | grep '^${{ env.REF }}=' | cut -d'=' -f2 | tr -d '[:space:]')
+            echo "Base $BASE ref: $BASE_REF"
+            echo "Branch $BRANCH ref: $BRANCH_REF"
+            if [ "$BASE_REF" != "$BRANCH_REF" ]; then
+              EXISTING=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+              if [ -z "$EXISTING" ]; then
+                gh pr create \
+                  --base "$BASE" \
+                  --head "$BRANCH" \
+                  --title "$TITLE" \
+                  --body "Upstream ref is up to date. Branch has changes from a previous update."
+                echo "Created PR for existing branch $BRANCH"
+              else
+                echo "PR #$EXISTING already exists for $BRANCH"
+              fi
+            else
+              echo "Branch $BRANCH has same foliaRef as $BASE, no PR needed"
+            fi
+          else
+            echo "Branch $BRANCH does not exist on remote, no PR needed"
+          fi
+
       - name: Checkout AutoUpdateUpstream
+        if: steps.uptodate.outputs.skip != 'true'
         uses: actions/checkout@v7
         with:
           repository: ${{ env.TOOL }}
           path: tool
 
       - name: Checkout target repository
+        if: steps.uptodate.outputs.skip != 'true'
         uses: actions/checkout@v7
         with:
           repository: ${{ github.repository }}
           path: repo
 
       - name: Set up JDK 25
+        if: steps.uptodate.outputs.skip != 'true'
         uses: actions/setup-java@v6
         with:
           java-version: '25'
           distribution: 'zulu'
 
       - name: Build AutoUpdateUpstream
+        if: steps.uptodate.outputs.skip != 'true'
         working-directory: tool
         run: |
           chmod +x gradlew
           ./gradlew jar -x test
 
       - name: Read old upstream ref
+        if: steps.uptodate.outputs.skip != 'true'
         working-directory: repo
         run: |
           OLD_REF=$(grep '^${{ env.REF }}=' gradle.properties | cut -d'=' -f2 | tr -d '[:space:]')
@@ -46,12 +113,14 @@ jobs:
         id: oldref
 
       - name: Run AutoUpdateUpstream
+        if: steps.uptodate.outputs.skip != 'true'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           java -jar tool/build/libs/*.jar --repo=${{ github.workspace }}/repo
 
       - name: Get upstream commit messages
+        if: steps.uptodate.outputs.skip != 'true'
         working-directory: repo
         run: |
           UPSTREAM_URL="${{ env.UPSTREAM_URL }}"
@@ -67,6 +136,7 @@ jobs:
           git update-ref -d refs/upstream-tmp
 
       - name: Check for .patch changes
+        if: steps.uptodate.outputs.skip != 'true'
         id: check
         working-directory: repo
         run: |
@@ -77,13 +147,13 @@ jobs:
           fi
 
       - name: Create or update PR
-        if: steps.check.outputs.changed == 'true'
+        if: steps.uptodate.outputs.skip != 'true' && steps.check.outputs.changed == 'true'
         working-directory: repo
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPSTREAM_MSG: ${{ env.UPSTREAM_MSG }}
         run: |
-          BRANCH="auto-update/upstream"
+          BRANCH=${{ env.REF_COMMIT }}
           BASE="${{ github.event.repository.default_branch }}"
 
           git config user.name "github-actions[bot]"
